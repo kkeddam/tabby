@@ -16,6 +16,7 @@ import { MultifocusService } from '../services/multifocus.service'
 import { getTerminalBackgroundColor } from '../helpers'
 import { BaseTerminalTabHotkeyHandlerService } from './baseTerminalTabHotkeyHandlerService'
 import { BaseTerminalInputService } from './baseTerminalInputService'
+import { BaseTerminalInputDispatcherService } from './baseTerminalInputDispatcherService'
 
 
 const INACTIVE_TAB_UNLOAD_DELAY = 1000 * 30
@@ -120,7 +121,8 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
     protected app: AppService
     protected hostApp: HostAppService
     protected baseTerminalTabHotkeyHandler: BaseTerminalTabHotkeyHandlerService
-    protected inputService: BaseTerminalInputService
+    private inputService: BaseTerminalInputService
+    private inputDispatcher: BaseTerminalInputDispatcherService
     protected hotkeys: HotkeysService
     protected platform: PlatformService
     protected notifications: NotificationsService
@@ -212,6 +214,7 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
         this.multifocus = injector.get(MultifocusService)
         this.themes = injector.get(ThemesService)
         this.inputService = this.injector.get(BaseTerminalInputService)
+        this.inputDispatcher = this.injector.get(BaseTerminalInputDispatcherService)
 
         this.logger = this.log.create('baseTerminalTab')
         this.setTitle(this.translate.instant('Terminal'))
@@ -403,13 +406,12 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
      * Feeds input into the active session
      */
     sendInput (data: string|Buffer): void {
-        if (!(data instanceof Buffer)) {
-            data = Buffer.from(data, 'utf-8')
-        }
-        this.session?.feedFromTerminal(data)
-        if (this.config.store.terminal.scrollOnInput) {
-            this.frontend?.scrollToBottom()
-        }
+        this.inputDispatcher.sendInput({
+            data,
+            session: this.session,
+            frontend: this.frontend,
+            scrollOnInput: this.config.store.terminal.scrollOnInput,
+        })
     }
 
     /**
