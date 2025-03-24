@@ -15,6 +15,7 @@ import { SearchPanelComponent } from '../components/searchPanel.component'
 import { MultifocusService } from '../services/multifocus.service'
 import { getTerminalBackgroundColor } from '../helpers'
 import { BaseTerminalTabHotkeyHandlerService } from './baseTerminalTabHotkeyHandlerService'
+import { BaseTerminalInputService } from './baseTerminalInputService'
 
 
 const INACTIVE_TAB_UNLOAD_DELAY = 1000 * 30
@@ -119,6 +120,7 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
     protected app: AppService
     protected hostApp: HostAppService
     protected baseTerminalTabHotkeyHandler: BaseTerminalTabHotkeyHandlerService
+    protected inputService: BaseTerminalInputService
     protected hotkeys: HotkeysService
     protected platform: PlatformService
     protected notifications: NotificationsService
@@ -209,6 +211,7 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
         this.translate = injector.get(TranslateService)
         this.multifocus = injector.get(MultifocusService)
         this.themes = injector.get(ThemesService)
+        this.inputService = this.injector.get(BaseTerminalInputService)
 
         this.logger = this.log.create('baseTerminalTab')
         this.setTitle(this.translate.instant('Terminal'))
@@ -423,67 +426,21 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
             throw new Error('Frontend not ready')
         }
 
-        if (this.config.store.terminal.detectProgress) {
-            const percentageMatch = /(^|[^\d])(\d+(\.\d+)?)%([^\d]|$)/.exec(data)
-            if (!this.alternateScreenActive && percentageMatch) {
-                const percentage = percentageMatch[3] ? parseFloat(percentageMatch[2]) : parseInt(percentageMatch[2])
-                if (percentage > 0 && percentage <= 100) {
-                    this.setProgress(percentage)
-                }
-            } else {
-                this.setProgress(null)
-            }
-        }
+        const percentage = this.inputService.detectProgress(data)
+        this.setProgress(percentage ?? null)
 
         await this.frontend.write(data)
     }
 
     async paste (): Promise<void> {
-        let data = this.platform.readClipboard()
-        if (this.hostApp.platform === Platform.Windows) {
-            data = data.replaceAll('\r\n', '\r')
-        } else {
-            data = data.replaceAll('\n', '\r')
-        }
+        const raw = this.platform.readClipboard()
+        const prepared = await this.inputService.preparePasteData(raw)
+        if (!prepared) { return }
 
-        if (this.config.store.terminal.trimWhitespaceOnPaste && data.indexOf('\n') === data.length - 1) {
-            // Ends with a newline and has no other line breaks
-            data = data.substring(0, data.length - 1)
-        }
+        const supportsBracketedPaste = this.frontend?.supportsBracketedPaste() ?? false
+        const final = this.inputService.wrapBracketedPaste(prepared, supportsBracketedPaste)
 
-        if (!this.alternateScreenActive) {
-            if (data.includes('\r') && this.config.store.terminal.warnOnMultilinePaste) {
-                const buttons = [
-                    this.translate.instant('Paste'),
-                    this.translate.instant('Cancel'),
-                ]
-                const result = (await this.platform.showMessageBox(
-                    {
-                        type: 'warning',
-                        detail: data.slice(0, 1000),
-                        message: this.translate.instant('Paste multiple lines?'),
-                        buttons,
-                        defaultId: 0,
-                        cancelId: 1,
-                    },
-                )).response
-                if (result === 1) {
-                    return
-                }
-            } else {
-                if (this.config.store.terminal.trimWhitespaceOnPaste) {
-                    data = data.trimEnd()
-                    if (!data.includes('\r')) {
-                        data = data.trimStart()
-                    }
-                }
-            }
-        }
-
-        if (this.config.store.terminal.bracketedPaste && this.frontend?.supportsBracketedPaste()) {
-            data = `\x1b[200~${data}\x1b[201~`
-        }
-        this.sendInput(data)
+        this.sendInput(final)
     }
 
     /**
