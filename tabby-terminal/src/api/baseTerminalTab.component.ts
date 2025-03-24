@@ -234,7 +234,7 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
             scrollToBottom: () => this.frontend?.scrollToBottom(),
             notify: msg => this.notifications.notice(msg),
             translate: msg => this.translate.instant(msg),
-            getSelection: () => this.frontend?.getSelection() ?? ''
+            getSelection: () => this.frontend?.getSelection() ?? '',
         })
 
         this.bellPlayer = document.createElement('audio')

@@ -28,7 +28,7 @@ export interface BaseTerminalTabHotkeyContext {
 
 @Injectable({ providedIn: 'root' })
 export class BaseTerminalTabHotkeyHandlerService {
-    initialize(context: BaseTerminalTabHotkeyContext): void {
+    initialize (context: BaseTerminalTabHotkeyContext): void {
         const {
             untilDestroyed,
             hotkey$,
@@ -54,7 +54,7 @@ export class BaseTerminalTabHotkeyHandlerService {
         } = context
 
         untilDestroyed(hotkey$, hotkey => {
-            if (!hasFocus()) return
+            if (!hasFocus()) { return }
 
             switch (hotkey) {
                 case 'ctrl-c':
