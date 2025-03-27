@@ -14,6 +14,7 @@ import { TerminalDecorator } from './decorator'
 import { SearchPanelComponent } from '../components/searchPanel.component'
 import { MultifocusService } from '../services/multifocus.service'
 import { getTerminalBackgroundColor } from '../helpers'
+import { BaseTerminalInputDispatcherService } from './baseTerminalInputDispatcherService'
 
 
 const INACTIVE_TAB_UNLOAD_DELAY = 1000 * 30
@@ -117,6 +118,7 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
     protected zone: NgZone
     protected app: AppService
     protected hostApp: HostAppService
+    private inputDispatcher: BaseTerminalInputDispatcherService
     protected hotkeys: HotkeysService
     protected platform: PlatformService
     protected notifications: NotificationsService
@@ -206,6 +208,7 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
         this.translate = injector.get(TranslateService)
         this.multifocus = injector.get(MultifocusService)
         this.themes = injector.get(ThemesService)
+        this.inputDispatcher = this.injector.get(BaseTerminalInputDispatcherService)
 
         this.logger = this.log.create('baseTerminalTab')
         this.setTitle(this.translate.instant('Terminal'))
@@ -490,13 +493,12 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
      * Feeds input into the active session
      */
     sendInput (data: string|Buffer): void {
-        if (!(data instanceof Buffer)) {
-            data = Buffer.from(data, 'utf-8')
-        }
-        this.session?.feedFromTerminal(data)
-        if (this.config.store.terminal.scrollOnInput) {
-            this.frontend?.scrollToBottom()
-        }
+        this.inputDispatcher.sendInput({
+            data,
+            session: this.session,
+            frontend: this.frontend,
+            scrollOnInput: this.config.store.terminal.scrollOnInput,
+        })
     }
 
     /**
