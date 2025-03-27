@@ -96,6 +96,7 @@ export abstract class BaseTabComponent extends BaseComponent {
     public recoveryStateChanged(): void {
         this.recoveryStateChangedHint.next()
     }
+    
     protected constructor (injector: Injector) {
         super()
         this.config = injector.get(ConfigService)

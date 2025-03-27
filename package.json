@@ -118,6 +118,9 @@
   "type": "module",
   "private": true,
   "dependencies": {
-    "dotenv": "^16.3.1"
+    "@ngx-translate/core": "^16.0.4",
+    "dotenv": "^16.3.1",
+    "ngx-filesize": "^3.0.5",
+    "ngx-translate-messageformat-compiler": "^7.1.0"
   }
 }
