@@ -14,6 +14,7 @@ import { TerminalDecorator } from './decorator'
 import { SearchPanelComponent } from '../components/searchPanel.component'
 import { MultifocusService } from '../services/multifocus.service'
 import { getTerminalBackgroundColor } from '../helpers'
+import { BaseTerminalTabHotkeyHandlerService } from './baseTerminalTabHotkeyHandlerService'
 
 
 const INACTIVE_TAB_UNLOAD_DELAY = 1000 * 30
@@ -118,6 +119,7 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
     protected app: AppService
     protected hostApp: HostAppService
     protected hotkeys: HotkeysService
+    private baseTerminalTabHotkeyHandler: BaseTerminalTabHotkeyHandlerService
     protected platform: PlatformService
     protected notifications: NotificationsService
     protected log: LogService
@@ -196,6 +198,7 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
         this.zone = injector.get(NgZone)
         this.app = injector.get(AppService)
         this.hostApp = injector.get(HostAppService)
+        this.baseTerminalTabHotkeyHandler = injector.get(BaseTerminalTabHotkeyHandlerService)
         this.hotkeys = injector.get(HotkeysService)
         this.platform = injector.get(PlatformService)
         this.notifications = injector.get(NotificationsService)
@@ -210,121 +213,28 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
         this.logger = this.log.create('baseTerminalTab')
         this.setTitle(this.translate.instant('Terminal'))
 
-        this.subscribeUntilDestroyed(this.hotkeys.unfilteredHotkey$, async hotkey => {
-            if (!this.hasFocus) {
-                return
-            }
-            if (hotkey === 'search') {
-                this.showSearchPanel = true
-                setImmediate(() => {
-                    const input = this.element.nativeElement.querySelector('.search-input')
-                    const selectedText = (this.frontend?.getSelection() ?? '').trim()
-                    if (input && selectedText.length) {
-                        input.value = selectedText
-                    }
-
-                    input?.focus()
-                    input?.select()
-                })
-            }
-        })
-
-        this.subscribeUntilDestroyed(this.hotkeys.hotkey$, async hotkey => {
-            if (!this.hasFocus) {
-                return
-            }
-            switch (hotkey) {
-                case 'ctrl-c':
-                    if (this.frontend?.getSelection()) {
-                        this.frontend.copySelection()
-                        this.frontend.clearSelection()
-                        this.notifications.notice(this.translate.instant('Copied'))
-                    } else {
-                        this.forEachFocusedTerminalPane(tab => tab.sendInput('\x03'))
-                    }
-                    break
-                case 'copy':
-                    this.frontend?.copySelection()
-                    this.frontend?.clearSelection()
-                    this.notifications.notice(this.translate.instant('Copied'))
-                    break
-                case 'paste':
-                    this.forEachFocusedTerminalPane(tab => tab.paste())
-                    break
-                case 'select-all':
-                    this.frontend?.selectAll()
-                    break
-                case 'clear':
-                    this.forEachFocusedTerminalPane(tab => tab.frontend?.clear())
-                    break
-                case 'zoom-in':
-                    this.forEachFocusedTerminalPane(tab => tab.zoomIn())
-                    break
-                case 'zoom-out':
-                    this.forEachFocusedTerminalPane(tab => tab.zoomOut())
-                    break
-                case 'reset-zoom':
-                    this.forEachFocusedTerminalPane(tab => tab.resetZoom())
-                    break
-                case 'previous-word':
-                    this.forEachFocusedTerminalPane(tab => {
-                        tab.sendInput({
-                            [Platform.Windows]: '\x1b[1;5D',
-                            [Platform.macOS]: '\x1bb',
-                            [Platform.Linux]: '\x1bb',
-                        }[this.hostApp.platform])
-                    })
-                    break
-                case 'next-word':
-                    this.forEachFocusedTerminalPane(tab => {
-                        tab.sendInput({
-                            [Platform.Windows]: '\x1b[1;5C',
-                            [Platform.macOS]: '\x1bf',
-                            [Platform.Linux]: '\x1bf',
-                        }[this.hostApp.platform])
-                    })
-                    break
-                case 'delete-line':
-                    this.forEachFocusedTerminalPane(tab => {
-                        tab.sendInput('\x1bw')
-                    })
-                    break
-                case 'delete-previous-word':
-                    this.forEachFocusedTerminalPane(tab => {
-                        tab.sendInput('\u0017')
-                    })
-                    break
-                case 'delete-next-word':
-                    this.forEachFocusedTerminalPane(tab => {
-                        tab.sendInput({
-                            [Platform.Windows]: '\x1bd\x1b[3;5~',
-                            [Platform.macOS]: '\x1bd',
-                            [Platform.Linux]: '\x1bd',
-                        }[this.hostApp.platform])
-                    })
-                    break
-                case 'copy-current-path':
-                    this.copyCurrentPath()
-                    break
-                case 'scroll-to-top':
-                    this.frontend?.scrollToTop()
-                    break
-                case 'scroll-page-up':
-                    this.frontend?.scrollPages(-1)
-                    break
-                case 'scroll-up':
-                    this.frontend?.scrollLines(-1)
-                    break
-                case 'scroll-down':
-                    this.frontend?.scrollLines(1)
-                    break
-                case 'scroll-page-down':
-                    this.frontend?.scrollPages(1)
-                    break
-                case 'scroll-to-bottom':
-                    this.frontend?.scrollToBottom()
-                    break
-            }
+        this.baseTerminalTabHotkeyHandler.initialize({
+            untilDestroyed: this.subscribeUntilDestroyed.bind(this),
+            hotkey$: this.hotkeys.hotkey$,
+            hasFocus: () => this.hasFocus,
+            copySelection: () => this.frontend?.copySelection(),
+            clearSelection: () => this.frontend?.clearSelection(),
+            paste: () => this.forEachFocusedTerminalPane(tab => tab.paste()),
+            selectAll: () => this.frontend?.selectAll(),
+            clearTerminal: () => this.forEachFocusedTerminalPane(tab => tab.frontend?.clear()),
+            zoomIn: () => this.forEachFocusedTerminalPane(tab => tab.zoomIn()),
+            zoomOut: () => this.forEachFocusedTerminalPane(tab => tab.zoomOut()),
+            resetZoom: () => this.forEachFocusedTerminalPane(tab => tab.resetZoom()),
+            sendInput: input => this.forEachFocusedTerminalPane(tab => tab.sendInput(input)),
+            sendPlatformInput: map => this.forEachFocusedTerminalPane(tab => tab.sendInput(map[this.hostApp.platform])),
+            copyCurrentPath: () => this.copyCurrentPath(),
+            scrollLines: n => this.frontend?.scrollLines(n),
+            scrollPages: n => this.frontend?.scrollPages(n),
+            scrollToTop: () => this.frontend?.scrollToTop(),
+            scrollToBottom: () => this.frontend?.scrollToBottom(),
+            notify: msg => this.notifications.notice(msg),
+            translate: msg => this.translate.instant(msg),
+            getSelection: () => this.frontend?.getSelection() ?? '',
         })
 
         this.bellPlayer = document.createElement('audio')
