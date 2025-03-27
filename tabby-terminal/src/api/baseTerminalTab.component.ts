@@ -114,25 +114,25 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
     // Deps start
     config: ConfigService
     element: ElementRef
-    protected zone: NgZone
+    private zone: NgZone
     protected app: AppService
-    protected hostApp: HostAppService
+    private hostApp: HostAppService
     protected hotkeys: HotkeysService
     protected platform: PlatformService
     protected notifications: NotificationsService
     protected log: LogService
-    protected decorators: TerminalDecorator[] = []
-    protected contextMenuProviders: TabContextMenuItemProvider[]
-    protected hostWindow: HostWindowService
+    private decorators: TerminalDecorator[] = []
+    private contextMenuProviders: TabContextMenuItemProvider[]
+    private hostWindow: HostWindowService
     protected translate: TranslateService
-    protected multifocus: MultifocusService
-    protected themes: ThemesService
+    private multifocus: MultifocusService
+    private themes: ThemesService
     // Deps end
 
     protected logger: Logger
-    protected output = new Subject<string>()
-    protected binaryOutput = new Subject<Buffer>()
-    protected sessionChanged = new Subject<BaseSession|null>()
+    private output = new Subject<string>()
+    private binaryOutput = new Subject<Buffer>()
+    private sessionChanged = new Subject<BaseSession|null>()
     protected recentInputs = ''
     private bellPlayer: HTMLAudioElement
     private termContainerSubscriptions = new SubscriptionContainer()
