@@ -14,6 +14,7 @@ import { TerminalDecorator } from './decorator'
 import { SearchPanelComponent } from '../components/searchPanel.component'
 import { MultifocusService } from '../services/multifocus.service'
 import { getTerminalBackgroundColor } from '../helpers'
+import { BaseTerminalToolbarStateService } from './baseTerminalToolbarStateService'
 
 
 const INACTIVE_TAB_UNLOAD_DELAY = 1000 * 30
@@ -117,6 +118,7 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
     protected zone: NgZone
     protected app: AppService
     protected hostApp: HostAppService
+    private toolbarStateService: BaseTerminalToolbarStateService
     protected hotkeys: HotkeysService
     protected platform: PlatformService
     protected notifications: NotificationsService
@@ -332,6 +334,13 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
         this.bellPlayer.load()
 
         this.contextMenuProviders.sort((a, b) => a.weight - b.weight)
+
+        this.toolbarStateService = new BaseTerminalToolbarStateService(
+            this.toolbarRevealTimeout,
+            () => this.pinToolbar,
+            val => this.pinToolbar = val,
+            val => this.revealToolbar = val,
+        )
     }
 
     /** @hidden */
@@ -777,17 +786,15 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
     }
 
     showToolbar (): void {
-        this.revealToolbar = true
-        this.toolbarRevealTimeout.clear()
+        this.toolbarStateService.showToolbar()
     }
 
     hideToolbar (): void {
-        this.toolbarRevealTimeout.set()
+        this.toolbarStateService.hideToolbar()
     }
 
     togglePinToolbar (): void {
-        this.pinToolbar = !this.pinToolbar
-        window.localStorage.pinTerminalToolbar = this.pinToolbar
+        this.toolbarStateService.togglePin()
     }
 
     @HostBinding('class.with-title-inset') get hasTitleInset (): boolean {
