@@ -345,7 +345,7 @@ export class BaseTerminalTabComponent<P extends BaseTerminalProfile> extends Bas
 
     /** @hidden */
     ngOnInit (): void {
-        this.pinToolbar = this.enableToolbar && (window.localStorage.pinTerminalToolbar ?? 'true') === 'true'
+        this.pinToolbar = this.toolbarStateService.initializeFromStorage()
 
         this.focused$.subscribe(() => {
             this.configure()

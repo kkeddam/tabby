@@ -23,4 +23,9 @@ export class BaseTerminalToolbarStateService {
         this.setPinned(newState)
         window.localStorage.pinTerminalToolbar = newState.toString()
     }
+
+    initializeFromStorage (): boolean {
+        const stored = window.localStorage.pinTerminalToolbar
+        return stored === 'true'
+    }
 }
