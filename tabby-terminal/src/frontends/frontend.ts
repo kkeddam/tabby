@@ -105,6 +105,92 @@ export abstract class Frontend {
     detach (host: HTMLElement): void { } // eslint-disable-line
     abstract focus (): void
 
-    // Terminal capability implementations
+    // Terminal capabilities implementation
     abstract getCapabilities (): TerminalCapabilities
+
+    // Search capabilities
+    findNext (term: string, searchOptions?: SearchOptions): SearchState {
+        return this.getCapabilities().findNext(term, searchOptions)
+    }
+
+    findPrevious (term: string, searchOptions?: SearchOptions): SearchState {
+        return this.getCapabilities().findPrevious(term, searchOptions)
+    }
+
+    cancelSearch (): void {
+        this.getCapabilities().cancelSearch()
+    }
+
+    // Scroll capabilities
+    scrollToTop (): void {
+        this.getCapabilities().scrollToTop()
+    }
+
+    scrollLines (amount: number): void {
+        this.getCapabilities().scrollLines(amount)
+    }
+
+    scrollPages (pages: number): void {
+        this.getCapabilities().scrollPages(pages)
+    }
+
+    scrollToBottom (): void {
+        this.getCapabilities().scrollToBottom()
+    }
+
+    // Selection capabilities
+    getSelection (): string {
+        return this.getCapabilities().getSelection()
+    }
+
+    copySelection (): void {
+        this.getCapabilities().copySelection()
+    }
+
+    selectAll (): void {
+        this.getCapabilities().selectAll()
+    }
+
+    clearSelection (): void {
+        this.getCapabilities().clearSelection()
+    }
+
+    // IO capabilities
+    write (data: string): Promise<void> {
+        return this.getCapabilities().write(data)
+    }
+
+    clear (): void {
+        this.getCapabilities().clear()
+    }
+
+    visualBell (): void {
+        this.getCapabilities().visualBell()
+    }
+
+    // Configuration capabilities
+    configure (profile: BaseTerminalProfile): void {
+        this.getCapabilities().configure(profile)
+    }
+
+    setZoom (zoom: number): void {
+        this.getCapabilities().setZoom(zoom)
+    }
+
+    // State capabilities
+    saveState (): any {
+        return this.getCapabilities().saveState()
+    }
+
+    restoreState (state: string): void {
+        this.getCapabilities().restoreState(state)
+    }
+
+    supportsBracketedPaste (): boolean {
+        return this.getCapabilities().supportsBracketedPaste()
+    }
+
+    isAlternateScreenActive (): boolean {
+        return this.getCapabilities().isAlternateScreenActive()
+    }
 }
