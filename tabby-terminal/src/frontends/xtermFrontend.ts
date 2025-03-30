@@ -15,6 +15,9 @@ import { BaseTerminalProfile, TerminalColorScheme } from '../api/interfaces'
 import { getTerminalBackgroundColor } from '../helpers'
 import './xterm.css'
 import { XTermSearchManager } from './xtermSearchManager'
+import { TerminalInput, XTermInputManager } from './xtermInputManager'
+import { XTermThemeManager } from './xtermThemeManager'
+import { XTermSelectionManager } from './xtermSelectionManager'
 
 const COLOR_NAMES = [
     'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white',
@@ -81,12 +84,18 @@ export class XTermFrontend extends Frontend {
     private flowControl: FlowControl
     private searchManager: XTermSearchManager
     private searchState: SearchState = { resultCount: 0 }
+    // Add onCopy property declaration
+    onCopy?: (text: string) => void
 
     private configService: ConfigService
     private hotkeysService: HotkeysService
     private platformService: PlatformService
     private hostApp: HostAppService
     private themes: ThemesService
+
+    private inputManager: XTermInputManager
+    private themeManager: XTermThemeManager
+    private selectionManager: XTermSelectionManager
 
     constructor (injector: Injector) {
         super(injector)
@@ -111,6 +120,19 @@ export class XTermFrontend extends Frontend {
             () => this.copyOnSelect,
             () => this.preventNextOnSelectionChangeEvent = true,
         )
+
+        this.inputManager = new XTermInputManager(
+            this.xterm,
+            (input) => this.sendInput(input),
+        )
+
+        this.selectionManager = new XTermSelectionManager(
+            this.xterm,
+            this.configService.store.terminal.copyOnSelect,
+            (text) => this.copyText(text),
+        )
+
+        this.themeManager = new XTermThemeManager(this.xterm)
 
         this.xterm.onBinary(data => {
             this.input.next(Buffer.from(data, 'binary'))
@@ -495,6 +517,20 @@ export class XTermFrontend extends Frontend {
 
     private getSelectionAsHTML (): string {
         return this.serializeAddon.serializeAsHTML({ includeGlobalBackground: true, onlySelection: true  })
+    }
+
+    private sendInput (input: TerminalInput): void {
+        if (input.type === 'data') {
+            this.input.next(Buffer.from(input.data, 'utf-8'))
+        } else {
+            this.input.next(Buffer.from(input.data, 'binary'))
+        }
+    }
+
+    private copyText (text: string): void {
+        if (this.onCopy) {
+            this.onCopy(text)
+        }
     }
 }
 
