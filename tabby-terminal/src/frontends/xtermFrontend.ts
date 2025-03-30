@@ -14,9 +14,7 @@ import { CanvasAddon } from '@xterm/addon-canvas'
 import { BaseTerminalProfile, TerminalColorScheme } from '../api/interfaces'
 import './xterm.css'
 import { XTermSearchManager } from './xtermSearchManager'
-import { TerminalInput, XTermInputManager } from './xtermInputManager'
 import { XTermThemeManager } from './xtermThemeManager'
-import { XTermSelectionManager } from './xtermSelectionManager'
 
 class FlowControl {
     private blocked = false
@@ -78,7 +76,6 @@ export class XTermFrontend extends Frontend {
     private flowControl: FlowControl
     private searchManager: XTermSearchManager
     private searchState: SearchState = { resultCount: 0 }
-    // Add onCopy property declaration
     onCopy?: (text: string) => void
 
     private configService: ConfigService
@@ -87,9 +84,7 @@ export class XTermFrontend extends Frontend {
     private hostApp: HostAppService
     private themes: ThemesService
 
-    private inputManager: XTermInputManager
     private themeManager: XTermThemeManager
-    private selectionManager: XTermSelectionManager
 
     constructor (injector: Injector) {
         super(injector)
@@ -115,21 +110,14 @@ export class XTermFrontend extends Frontend {
             () => this.preventNextOnSelectionChangeEvent = true,
         )
 
-        this.inputManager = new XTermInputManager(
-            this.xterm,
-            (input) => this.sendInput(input),
-        )
-
-        this.selectionManager = new XTermSelectionManager(
-            this.xterm,
-            this.configService.store.terminal.copyOnSelect,
-            (text) => this.copyText(text),
-        )
-
         this.themeManager = new XTermThemeManager(this.xterm)
 
-        // Let inputManager handle binary and text input events
-        this.inputManager.initialize()
+        this.xterm.onBinary(data => {
+            this.input.next(Buffer.from(data, 'binary'))
+        })
+        this.xterm.onData(data => {
+            this.input.next(Buffer.from(data, 'utf-8'))
+        })
 
         this.xterm.onResize(({ cols, rows }) => {
             this.resize.next({ rows, columns: cols })
@@ -138,10 +126,11 @@ export class XTermFrontend extends Frontend {
             this.title.next(title)
         })
 
-        // Use the selectionManager to handle selection changes
         this.xterm.onSelectionChange(() => {
             if (this.getSelection()) {
-                this.selectionManager.handleSelection(this.preventNextOnSelectionChangeEvent)
+                if (this.copyOnSelect && !this.preventNextOnSelectionChangeEvent) {
+                    this.copySelection()
+                }
                 this.preventNextOnSelectionChangeEvent = false
             }
         })
@@ -327,12 +316,20 @@ export class XTermFrontend extends Frontend {
             return
         }
 
-        this.selectionManager.copySelectionToClipboard(
-            text,
-            this.platformService,
-            this.configService.store.terminal.copyAsHTML,
-            () => this.getSelectionAsHTML(),
-        )
+        if (text.length < 1024 * 32 && this.configService.store.terminal.copyAsHTML) {
+            this.platformService.setClipboard({
+                text: text,
+                html: this.getSelectionAsHTML(),
+            })
+        } else {
+            this.platformService.setClipboard({
+                text: text,
+            })
+        }
+
+        if (this.onCopy) {
+            this.onCopy(text)
+        }
     }
 
     selectAll (): void {
@@ -381,7 +378,6 @@ export class XTermFrontend extends Frontend {
     }
 
     private configureColors (scheme: TerminalColorScheme|undefined): void {
-        // Generate theme using the theme manager
         const theme = this.themeManager.generateTheme(scheme, this.configService, this.themes)
 
         if (!deepEqual(this.configuredTheme, theme)) {
@@ -426,9 +422,7 @@ export class XTermFrontend extends Frontend {
         this.setFontSize()
 
         this.copyOnSelect = config.terminal.copyOnSelect
-        this.selectionManager.setCopyOnSelect(this.copyOnSelect)
 
-        // Set font in theme manager
         this.themeManager.setFont(
             getCSSFontFamily(config),
             config.terminal.fontSize,
@@ -499,20 +493,6 @@ export class XTermFrontend extends Frontend {
 
     private getSelectionAsHTML (): string {
         return this.serializeAddon.serializeAsHTML({ includeGlobalBackground: true, onlySelection: true  })
-    }
-
-    private sendInput (input: TerminalInput): void {
-        if (input.type === 'data') {
-            this.input.next(Buffer.from(input.data, 'utf-8'))
-        } else {
-            this.input.next(Buffer.from(input.data, 'binary'))
-        }
-    }
-
-    private copyText (text: string): void {
-        if (this.onCopy) {
-            this.onCopy(text)
-        }
     }
 }
 
