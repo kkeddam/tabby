@@ -2,7 +2,7 @@ import deepEqual from 'deep-equal'
 import { BehaviorSubject, filter, firstValueFrom, takeUntil } from 'rxjs'
 import { Injector } from '@angular/core'
 import { ConfigService, getCSSFontFamily, getWindows10Build, HostAppService, HotkeysService, Platform, PlatformService, ThemesService } from 'tabby-core'
-import { Frontend, SearchOptions, SearchState, TerminalCapabilities } from './frontend'
+import { Frontend, SearchOptions, SearchState } from './frontend'
 import { Terminal, ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { LigaturesAddon } from '@xterm/addon-ligatures'
@@ -15,6 +15,42 @@ import { CanvasAddon } from '@xterm/addon-canvas'
 import { BaseTerminalProfile, TerminalColorScheme } from '../api/interfaces'
 import { getTerminalBackgroundColor } from '../helpers'
 import './xterm.css'
+import { TerminalCapabilitiesHelper } from './terminalCapabilities.helper'
+
+// Define the TerminalCapabilities interface needed for getCapabilities method
+interface TerminalCapabilities {
+    // Search capabilities
+    findNext: (term: string, searchOptions?: SearchOptions) => SearchState;
+    findPrevious: (term: string, searchOptions?: SearchOptions) => SearchState;
+    cancelSearch: () => void;
+
+    // Scroll capabilities
+    scrollToTop: () => void;
+    scrollLines: (amount: number) => void;
+    scrollPages: (pages: number) => void;
+    scrollToBottom: () => void;
+
+    // Selection capabilities
+    getSelection: () => string;
+    copySelection: () => void;
+    selectAll: () => void;
+    clearSelection: () => void;
+
+    // IO capabilities
+    write: (data: string) => Promise<void>;
+    clear: () => void;
+    visualBell: () => void;
+
+    // Configuration capabilities
+    configure: (profile: BaseTerminalProfile) => void;
+    setZoom: (zoom: number) => void;
+
+    // State capabilities
+    saveState: () => any;
+    restoreState: (state: string) => void;
+    supportsBracketedPaste: () => boolean;
+    isAlternateScreenActive: () => boolean;
+}
 
 const COLOR_NAMES = [
     'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white',
@@ -59,6 +95,10 @@ class FlowControl {
 
 /** @hidden */
 export class XTermFrontend extends Frontend {
+    focus (): void {
+        throw new Error('Method not implemented.')
+    }
+
     enableResizing = true
     xterm: Terminal
     protected xtermCore: any
@@ -81,6 +121,7 @@ export class XTermFrontend extends Frontend {
     private opened = false
     private resizeObserver?: any
     private flowControl: FlowControl
+    private capabilitiesHelper: TerminalCapabilitiesHelper
 
     private configService: ConfigService
     private hotkeysService: HotkeysService
@@ -220,6 +261,306 @@ export class XTermFrontend extends Frontend {
             const altBufferActive = this.xterm.buffer.active.type === 'alternate'
             this.alternateScreenActive.next(altBufferActive)
         })
+
+        // Initialize capabilities helper with implementation methods
+        this.capabilitiesHelper = new TerminalCapabilitiesHelper({
+            // Search capabilities
+            findNext: this.findNextImpl.bind(this),
+            findPrevious: this.findPreviousImpl.bind(this),
+            cancelSearch: this.cancelSearchImpl.bind(this),
+
+            // Scroll capabilities
+            scrollToTop: this.scrollToTopImpl.bind(this),
+            scrollLines: this.scrollLinesImpl.bind(this),
+            scrollPages: this.scrollPagesImpl.bind(this),
+            scrollToBottom: this.scrollToBottomImpl.bind(this),
+
+            // Selection capabilities
+            getSelection: this.getSelectionImpl.bind(this),
+            copySelection: this.copySelectionImpl.bind(this),
+            selectAll: this.selectAllImpl.bind(this),
+            clearSelection: this.clearSelectionImpl.bind(this),
+
+            // IO capabilities
+            write: this.writeImpl.bind(this),
+            clear: this.clearImpl.bind(this),
+            visualBell: this.visualBellImpl.bind(this),
+
+            // Configuration capabilities
+            configure: this.configureImpl.bind(this),
+            setZoom: this.setZoomImpl.bind(this),
+
+            // State capabilities
+            saveState: this.saveStateImpl.bind(this),
+            restoreState: this.restoreStateImpl.bind(this),
+            supportsBracketedPaste: this.supportsBracketedPasteImpl.bind(this),
+            isAlternateScreenActive: this.isAlternateScreenActiveImpl.bind(this),
+        })
+
+        // Apply the capabilities to this frontend instance
+        this.capabilitiesHelper.applyTo(this)
+    }
+
+    // Rename original methods to avoid conflicts with interface methods
+    private getSelectionImpl (): string {
+        return this.xterm.getSelection()
+    }
+
+    private copySelectionImpl (): void {
+        const text = this.getSelectionImpl()
+        if (!text.trim().length) {
+            return
+        }
+        if (text.length < 1024 * 32 && this.configService.store.terminal.copyAsHTML) {
+            this.platformService.setClipboard({
+                text: this.getSelectionImpl(),
+                html: this.getSelectionAsHTML(),
+            })
+        } else {
+            this.platformService.setClipboard({
+                text: this.getSelectionImpl(),
+            })
+        }
+    }
+
+    private selectAllImpl (): void {
+        this.xterm.selectAll()
+    }
+
+    private clearSelectionImpl (): void {
+        this.xterm.clearSelection()
+    }
+
+    private async writeImpl (data: string): Promise<void> {
+        await this.flowControl.write(data)
+    }
+
+    private clearImpl (): void {
+        this.xterm.clear()
+    }
+
+    private visualBellImpl (): void {
+        if (this.element) {
+            this.element.style.animation = 'none'
+            setTimeout(() => {
+                this.element!.style.animation = 'terminalShakeFrames 0.3s ease'
+            })
+        }
+    }
+
+    private scrollToTopImpl (): void {
+        this.xterm.scrollToTop()
+    }
+
+    private scrollPagesImpl (pages: number): void {
+        this.xterm.scrollPages(pages)
+    }
+
+    private scrollLinesImpl (amount: number): void {
+        this.xterm.scrollLines(amount)
+    }
+
+    private scrollToBottomImpl (): void {
+        this.xtermCore._scrollToBottom()
+    }
+
+    private configureImpl (profile: BaseTerminalProfile): void {
+        const config = this.configService.store
+
+        setImmediate(() => {
+            if (this.xterm.cols && this.xterm.rows && this.xtermCore.charMeasure) {
+                if (this.xtermCore.charMeasure) {
+                    this.xtermCore.charMeasure.measure(this.xtermCore.options)
+                }
+                if (this.xtermCore.renderer) {
+                    this.xtermCore.renderer._updateDimensions()
+                }
+                this.resizeHandler()
+            }
+        })
+
+        this.xtermCore.browser.isWindows = this.hostApp.platform === Platform.Windows
+        this.xtermCore.browser.isLinux = this.hostApp.platform === Platform.Linux
+        this.xtermCore.browser.isMac = this.hostApp.platform === Platform.macOS
+
+        this.xterm.options.fontFamily = getCSSFontFamily(config)
+        this.xterm.options.cursorStyle = {
+            beam: 'bar',
+        }[config.terminal.cursor] || config.terminal.cursor
+        this.xterm.options.cursorBlink = config.terminal.cursorBlink
+        this.xterm.options.macOptionIsMeta = config.terminal.altIsMeta
+        this.xterm.options.scrollback = config.terminal.scrollbackLines
+        this.xterm.options.wordSeparator = config.terminal.wordSeparator
+        this.xterm.options.drawBoldTextInBrightColors = config.terminal.drawBoldTextInBrightColors
+        this.xterm.options.fontWeight = config.terminal.fontWeight
+        this.xterm.options.fontWeightBold = config.terminal.fontWeightBold
+        this.xterm.options.minimumContrastRatio = config.terminal.minimumContrastRatio
+        this.configuredFontSize = config.terminal.fontSize
+        this.configuredLinePadding = config.terminal.linePadding
+        this.setFontSize()
+
+        this.copyOnSelect = config.terminal.copyOnSelect
+
+        this.configureColors(profile.terminalColorScheme)
+
+        if (this.opened && config.terminal.ligatures && !this.ligaturesAddon && this.hostApp.platform !== Platform.Web) {
+            this.ligaturesAddon = new LigaturesAddon()
+            this.xterm.loadAddon(this.ligaturesAddon)
+        }
+    }
+
+    private setZoomImpl (zoom: number): void {
+        this.zoom = zoom
+        this.setFontSize()
+        this.resizeHandler()
+    }
+
+    private findNextImpl (term: string, searchOptions?: SearchOptions): SearchState {
+        if (this.copyOnSelect) {
+            this.preventNextOnSelectionChangeEvent = true
+        }
+        return this.wrapSearchResult(
+            this.search.findNext(term, this.getSearchOptions(searchOptions)),
+        )
+    }
+
+    private findPreviousImpl (term: string, searchOptions?: SearchOptions): SearchState {
+        if (this.copyOnSelect) {
+            this.preventNextOnSelectionChangeEvent = true
+        }
+        return this.wrapSearchResult(
+            this.search.findPrevious(term, this.getSearchOptions(searchOptions)),
+        )
+    }
+
+    private cancelSearchImpl (): void {
+        this.search.clearDecorations()
+        this.focus()
+    }
+
+    private saveStateImpl (): any {
+        return this.serializeAddon.serialize({
+            excludeAltBuffer: true,
+            excludeModes: true,
+            scrollback: 1000,
+        })
+    }
+
+    private restoreStateImpl (state: string): void {
+        this.xterm.write(state)
+    }
+
+    private supportsBracketedPasteImpl (): boolean {
+        return this.xterm.modes.bracketedPasteMode
+    }
+
+    private isAlternateScreenActiveImpl (): boolean {
+        return this.xterm.buffer.active.type === 'alternate'
+    }
+
+    // Implement the abstract methods from Frontend to delegate to our implementation
+    getSelection (): string {
+        return this.capabilitiesHelper.getSelection()
+    }
+
+    copySelection (): void {
+        this.capabilitiesHelper.copySelection()
+    }
+
+    selectAll (): void {
+        this.capabilitiesHelper.selectAll()
+    }
+
+    clearSelection (): void {
+        this.capabilitiesHelper.clearSelection()
+    }
+
+    write (data: string): Promise<void> {
+        return this.capabilitiesHelper.write(data)
+    }
+
+    clear (): void {
+        this.capabilitiesHelper.clear()
+    }
+
+    visualBell (): void {
+        this.capabilitiesHelper.visualBell()
+    }
+
+    scrollToTop (): void {
+        this.capabilitiesHelper.scrollToTop()
+    }
+
+    scrollLines (amount: number): void {
+        this.capabilitiesHelper.scrollLines(amount)
+    }
+
+    scrollPages (pages: number): void {
+        this.capabilitiesHelper.scrollPages(pages)
+    }
+
+    scrollToBottom (): void {
+        this.capabilitiesHelper.scrollToBottom()
+    }
+
+    configure (profile: BaseTerminalProfile): void {
+        this.capabilitiesHelper.configure(profile)
+    }
+
+    setZoom (zoom: number): void {
+        this.capabilitiesHelper.setZoom(zoom)
+    }
+
+    findNext (term: string, searchOptions?: SearchOptions): SearchState {
+        return this.capabilitiesHelper.findNext(term, searchOptions)
+    }
+
+    findPrevious (term: string, searchOptions?: SearchOptions): SearchState {
+        return this.capabilitiesHelper.findPrevious(term, searchOptions)
+    }
+
+    cancelSearch (): void {
+        this.capabilitiesHelper.cancelSearch()
+    }
+
+    saveState (): any {
+        return this.capabilitiesHelper.saveState()
+    }
+
+    restoreState (state: string): void {
+        this.capabilitiesHelper.restoreState(state)
+    }
+
+    supportsBracketedPaste (): boolean {
+        return this.capabilitiesHelper.supportsBracketedPaste()
+    }
+
+    isAlternateScreenActive (): boolean {
+        return this.capabilitiesHelper.isAlternateScreenActive()
+    }
+
+    private configureColors (scheme: TerminalColorScheme|undefined): void {
+        const appColorScheme = this.themes._getActiveColorScheme() as TerminalColorScheme
+
+        scheme = scheme ?? appColorScheme
+
+        const theme: ITheme = {
+            foreground: scheme.foreground,
+            selectionBackground: scheme.selection ?? '#88888888',
+            selectionForeground: scheme.selectionForeground ?? undefined,
+            background: getTerminalBackgroundColor(this.configService, this.themes, scheme) ?? '#00000000',
+            cursor: scheme.cursor,
+            cursorAccent: scheme.cursorAccent,
+        }
+
+        for (let i = 0; i < COLOR_NAMES.length; i++) {
+            theme[COLOR_NAMES[i]] = scheme.colors[i]
+        }
+
+        if (!deepEqual(this.configuredTheme, theme)) {
+            this.xterm.options.theme = theme
+            this.configuredTheme = theme
+        }
     }
 
     async attach (host: HTMLElement, profile: BaseTerminalProfile): Promise<void> {
@@ -299,145 +640,16 @@ export class XTermFrontend extends Frontend {
         this.xterm.dispose()
     }
 
-    getSelection (): string {
-        return this.xterm.getSelection()
-    }
-
-    copySelection (): void {
-        const text = this.getSelection()
-        if (!text.trim().length) {
-            return
-        }
-        if (text.length < 1024 * 32 && this.configService.store.terminal.copyAsHTML) {
-            this.platformService.setClipboard({
-                text: this.getSelection(),
-                html: this.getSelectionAsHTML(),
-            })
-        } else {
-            this.platformService.setClipboard({
-                text: this.getSelection(),
-            })
-        }
-    }
-
-    selectAll (): void {
-        this.xterm.selectAll()
-    }
-
-    clearSelection (): void {
-        this.xterm.clearSelection()
-    }
-
-    focus (): void {
-        setTimeout(() => this.xterm.focus())
-    }
-
-    async write (data: string): Promise<void> {
-        await this.flowControl.write(data)
-    }
-
-    clear (): void {
-        this.xterm.clear()
-    }
-
-    visualBell (): void {
-        if (this.element) {
-            this.element.style.animation = 'none'
-            setTimeout(() => {
-                this.element!.style.animation = 'terminalShakeFrames 0.3s ease'
-            })
-        }
-    }
-
-    scrollToTop (): void {
-        this.xterm.scrollToTop()
-    }
-
-    scrollPages (pages: number): void {
-        this.xterm.scrollPages(pages)
-    }
-
-    scrollLines (amount: number): void {
-        this.xterm.scrollLines(amount)
-    }
-
-    scrollToBottom (): void {
-        this.xtermCore._scrollToBottom()
-    }
-
-    private configureColors (scheme: TerminalColorScheme|undefined): void {
-        const appColorScheme = this.themes._getActiveColorScheme() as TerminalColorScheme
-
-        scheme = scheme ?? appColorScheme
-
-        const theme: ITheme = {
-            foreground: scheme.foreground,
-            selectionBackground: scheme.selection ?? '#88888888',
-            selectionForeground: scheme.selectionForeground ?? undefined,
-            background: getTerminalBackgroundColor(this.configService, this.themes, scheme) ?? '#00000000',
-            cursor: scheme.cursor,
-            cursorAccent: scheme.cursorAccent,
-        }
-
-        for (let i = 0; i < COLOR_NAMES.length; i++) {
-            theme[COLOR_NAMES[i]] = scheme.colors[i]
-        }
-
-        if (!deepEqual(this.configuredTheme, theme)) {
-            this.xterm.options.theme = theme
-            this.configuredTheme = theme
-        }
-    }
-
-    configure (profile: BaseTerminalProfile): void {
-        const config = this.configService.store
-
-        setImmediate(() => {
-            if (this.xterm.cols && this.xterm.rows && this.xtermCore.charMeasure) {
-                if (this.xtermCore.charMeasure) {
-                    this.xtermCore.charMeasure.measure(this.xtermCore.options)
-                }
-                if (this.xtermCore.renderer) {
-                    this.xtermCore.renderer._updateDimensions()
-                }
-                this.resizeHandler()
-            }
-        })
-
-        this.xtermCore.browser.isWindows = this.hostApp.platform === Platform.Windows
-        this.xtermCore.browser.isLinux = this.hostApp.platform === Platform.Linux
-        this.xtermCore.browser.isMac = this.hostApp.platform === Platform.macOS
-
-        this.xterm.options.fontFamily = getCSSFontFamily(config)
-        this.xterm.options.cursorStyle = {
-            beam: 'bar',
-        }[config.terminal.cursor] || config.terminal.cursor
-        this.xterm.options.cursorBlink = config.terminal.cursorBlink
-        this.xterm.options.macOptionIsMeta = config.terminal.altIsMeta
-        this.xterm.options.scrollback = config.terminal.scrollbackLines
-        this.xterm.options.wordSeparator = config.terminal.wordSeparator
-        this.xterm.options.drawBoldTextInBrightColors = config.terminal.drawBoldTextInBrightColors
-        this.xterm.options.fontWeight = config.terminal.fontWeight
-        this.xterm.options.fontWeightBold = config.terminal.fontWeightBold
-        this.xterm.options.minimumContrastRatio = config.terminal.minimumContrastRatio
-        this.configuredFontSize = config.terminal.fontSize
-        this.configuredLinePadding = config.terminal.linePadding
-        this.setFontSize()
-
-        this.copyOnSelect = config.terminal.copyOnSelect
-
-        this.configureColors(profile.terminalColorScheme)
-
-        if (this.opened && config.terminal.ligatures && !this.ligaturesAddon && this.hostApp.platform !== Platform.Web) {
-            this.ligaturesAddon = new LigaturesAddon()
-            this.xterm.loadAddon(this.ligaturesAddon)
-        }
-    }
-
-    setZoom (zoom: number): void {
-        this.zoom = zoom
-        this.setFontSize()
+    private setFontSize () {
+        const scale = Math.pow(1.1, this.zoom)
+        this.xterm.options.fontSize = this.configuredFontSize * scale
+        // eslint-disable-next-line @typescript-eslint/restrict-plus-operands
+        this.xterm.options.lineHeight = Math.max(1, (this.configuredFontSize + this.configuredLinePadding * 2) / this.configuredFontSize)
         this.resizeHandler()
+    }
+
+    private getSelectionAsHTML (): string {
+        return this.serializeAddon.serializeAsHTML({ includeGlobalBackground: true, onlySelection: true  })
     }
 
     private getSearchOptions (searchOptions?: SearchOptions): ISearchOptions {
@@ -457,61 +669,6 @@ export class XTermFrontend extends Frontend {
             return { resultCount: 0 }
         }
         return this.searchState
-    }
-
-    findNext (term: string, searchOptions?: SearchOptions): SearchState {
-        if (this.copyOnSelect) {
-            this.preventNextOnSelectionChangeEvent = true
-        }
-        return this.wrapSearchResult(
-            this.search.findNext(term, this.getSearchOptions(searchOptions)),
-        )
-    }
-
-    findPrevious (term: string, searchOptions?: SearchOptions): SearchState {
-        if (this.copyOnSelect) {
-            this.preventNextOnSelectionChangeEvent = true
-        }
-        return this.wrapSearchResult(
-            this.search.findPrevious(term, this.getSearchOptions(searchOptions)),
-        )
-    }
-
-    cancelSearch (): void {
-        this.search.clearDecorations()
-        this.focus()
-    }
-
-    saveState (): any {
-        return this.serializeAddon.serialize({
-            excludeAltBuffer: true,
-            excludeModes: true,
-            scrollback: 1000,
-        })
-    }
-
-    restoreState (state: string): void {
-        this.xterm.write(state)
-    }
-
-    supportsBracketedPaste (): boolean {
-        return this.xterm.modes.bracketedPasteMode
-    }
-
-    isAlternateScreenActive (): boolean {
-        return this.xterm.buffer.active.type === 'alternate'
-    }
-
-    private setFontSize () {
-        const scale = Math.pow(1.1, this.zoom)
-        this.xterm.options.fontSize = this.configuredFontSize * scale
-        // eslint-disable-next-line @typescript-eslint/restrict-plus-operands
-        this.xterm.options.lineHeight = Math.max(1, (this.configuredFontSize + this.configuredLinePadding * 2) / this.configuredFontSize)
-        this.resizeHandler()
-    }
-
-    private getSelectionAsHTML (): string {
-        return this.serializeAddon.serializeAsHTML({ includeGlobalBackground: true, onlySelection: true  })
     }
 
     getCapabilities (): TerminalCapabilities {
