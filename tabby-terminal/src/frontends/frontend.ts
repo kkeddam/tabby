@@ -15,9 +15,72 @@ export interface SearchState {
 }
 
 /**
+ * Interface for terminal search functionality
+ */
+export interface TerminalSearch {
+    findNext: (term: string, searchOptions?: SearchOptions) => SearchState
+    findPrevious: (term: string, searchOptions?: SearchOptions) => SearchState
+    cancelSearch: () => void
+}
+
+/**
+ * Interface for terminal scrolling functionality
+ */
+export interface TerminalScroll {
+    scrollToTop: () => void
+    scrollLines: (amount: number) => void
+    scrollPages: (pages: number) => void
+    scrollToBottom: () => void
+}
+
+/**
+ * Interface for terminal selection functionality
+ */
+export interface TerminalSelection {
+    getSelection: () => string
+    copySelection: () => void
+    selectAll: () => void
+    clearSelection: () => void
+}
+
+/**
+ * Interface for terminal input/output functionality
+ */
+export interface TerminalIO {
+    write: (data: string) => Promise<void>
+    clear: () => void
+    visualBell: () => void
+}
+
+/**
+ * Interface for terminal configuration functionality
+ */
+export interface TerminalConfiguration {
+    configure: (profile: BaseTerminalProfile) => void
+    setZoom: (zoom: number) => void
+}
+
+/**
+ * Interface for terminal state functionality
+ */
+export interface TerminalState {
+    saveState: () => any
+    restoreState: (state: string) => void
+    supportsBracketedPaste: () => boolean
+    isAlternateScreenActive: () => boolean
+}
+
+/**
  * Extend to add support for a different VT frontend implementation
  */
-export abstract class Frontend {
+export abstract class Frontend implements
+    TerminalSearch,
+    TerminalScroll,
+    TerminalSelection,
+    TerminalIO,
+    TerminalConfiguration,
+    TerminalState {
+
     enableResizing = true
     protected ready = new AsyncSubject<void>()
     protected title = new ReplaySubject<string>(1)
