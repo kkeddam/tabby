@@ -12,17 +12,11 @@ import { SerializeAddon } from '@xterm/addon-serialize'
 import { ImageAddon } from '@xterm/addon-image'
 import { CanvasAddon } from '@xterm/addon-canvas'
 import { BaseTerminalProfile, TerminalColorScheme } from '../api/interfaces'
-import { getTerminalBackgroundColor } from '../helpers'
 import './xterm.css'
 import { XTermSearchManager } from './xtermSearchManager'
 import { TerminalInput, XTermInputManager } from './xtermInputManager'
 import { XTermThemeManager } from './xtermThemeManager'
 import { XTermSelectionManager } from './xtermSelectionManager'
-
-const COLOR_NAMES = [
-    'black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white',
-    'brightBlack', 'brightRed', 'brightGreen', 'brightYellow', 'brightBlue', 'brightMagenta', 'brightCyan', 'brightWhite',
-]
 
 class FlowControl {
     private blocked = false
@@ -134,12 +128,9 @@ export class XTermFrontend extends Frontend {
 
         this.themeManager = new XTermThemeManager(this.xterm)
 
-        this.xterm.onBinary(data => {
-            this.input.next(Buffer.from(data, 'binary'))
-        })
-        this.xterm.onData(data => {
-            this.input.next(Buffer.from(data, 'utf-8'))
-        })
+        // Let inputManager handle binary and text input events
+        this.inputManager.initialize()
+
         this.xterm.onResize(({ cols, rows }) => {
             this.resize.next({ rows, columns: cols })
         })
@@ -150,13 +141,9 @@ export class XTermFrontend extends Frontend {
         // Use the selectionManager to handle selection changes
         this.xterm.onSelectionChange(() => {
             if (this.getSelection()) {
-                if (this.copyOnSelect && !this.preventNextOnSelectionChangeEvent) {
-                    this.copySelection()
-                }
+                this.selectionManager.handleSelection(this.preventNextOnSelectionChangeEvent)
                 this.preventNextOnSelectionChangeEvent = false
             }
-            // Mark that the selectionManager is being used
-            this.selectionManager.setCopyOnSelect(this.copyOnSelect)
         })
 
         this.xterm.onBell(() => {
@@ -339,16 +326,13 @@ export class XTermFrontend extends Frontend {
         if (!text.trim().length) {
             return
         }
-        if (text.length < 1024 * 32 && this.configService.store.terminal.copyAsHTML) {
-            this.platformService.setClipboard({
-                text: this.getSelection(),
-                html: this.getSelectionAsHTML(),
-            })
-        } else {
-            this.platformService.setClipboard({
-                text: this.getSelection(),
-            })
-        }
+
+        this.selectionManager.copySelectionToClipboard(
+            text,
+            this.platformService,
+            this.configService.store.terminal.copyAsHTML,
+            () => this.getSelectionAsHTML(),
+        )
     }
 
     selectAll (): void {
@@ -397,26 +381,12 @@ export class XTermFrontend extends Frontend {
     }
 
     private configureColors (scheme: TerminalColorScheme|undefined): void {
-        const appColorScheme = this.themes._getActiveColorScheme() as TerminalColorScheme
-
-        scheme = scheme ?? appColorScheme
-
-        const theme: ITheme = {
-            foreground: scheme.foreground,
-            selectionBackground: scheme.selection ?? '#88888888',
-            selectionForeground: scheme.selectionForeground ?? undefined,
-            background: getTerminalBackgroundColor(this.configService, this.themes, scheme) ?? '#00000000',
-            cursor: scheme.cursor,
-            cursorAccent: scheme.cursorAccent,
-        }
-
-        for (let i = 0; i < COLOR_NAMES.length; i++) {
-            theme[COLOR_NAMES[i]] = scheme.colors[i]
-        }
+        // Generate theme using the theme manager
+        const theme = this.themeManager.generateTheme(scheme, this.configService, this.themes)
 
         if (!deepEqual(this.configuredTheme, theme)) {
-            this.xterm.options.theme = theme
             this.configuredTheme = theme
+            this.themeManager.setTheme(theme)
         }
     }
 
@@ -456,15 +426,15 @@ export class XTermFrontend extends Frontend {
         this.setFontSize()
 
         this.copyOnSelect = config.terminal.copyOnSelect
+        this.selectionManager.setCopyOnSelect(this.copyOnSelect)
+
+        // Set font in theme manager
+        this.themeManager.setFont(
+            getCSSFontFamily(config),
+            config.terminal.fontSize,
+        )
 
         this.configureColors(profile.terminalColorScheme)
-
-        // Use themeManager in some way to avoid the "declared but never read" error
-        this.themeManager.setTheme(this.configuredTheme)
-
-        // Use inputManager in some way to avoid the "declared but never read" error
-        // Using void to avoid the no-unused-expressions error
-        void this.inputManager
 
         if (this.opened && config.terminal.ligatures && !this.ligaturesAddon && this.hostApp.platform !== Platform.Web) {
             this.ligaturesAddon = new LigaturesAddon()
