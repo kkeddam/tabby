@@ -2,7 +2,7 @@ import deepEqual from 'deep-equal'
 import { BehaviorSubject, filter, firstValueFrom, takeUntil } from 'rxjs'
 import { Injector } from '@angular/core'
 import { ConfigService, getCSSFontFamily, getWindows10Build, HostAppService, HotkeysService, Platform, PlatformService, ThemesService } from 'tabby-core'
-import { Frontend, SearchOptions, SearchState } from './frontend'
+import { Frontend, SearchOptions, SearchState, TerminalCapabilities } from './frontend'
 import { Terminal, ITheme } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { LigaturesAddon } from '@xterm/addon-ligatures'
@@ -512,6 +512,43 @@ export class XTermFrontend extends Frontend {
 
     private getSelectionAsHTML (): string {
         return this.serializeAddon.serializeAsHTML({ includeGlobalBackground: true, onlySelection: true  })
+    }
+
+    getCapabilities (): TerminalCapabilities {
+        // Return this instance as capabilities, implementing all the required methods
+        return {
+            // Search capabilities
+            findNext: this.findNext.bind(this),
+            findPrevious: this.findPrevious.bind(this),
+            cancelSearch: this.cancelSearch.bind(this),
+
+            // Scroll capabilities
+            scrollToTop: this.scrollToTop.bind(this),
+            scrollLines: this.scrollLines.bind(this),
+            scrollPages: this.scrollPages.bind(this),
+            scrollToBottom: this.scrollToBottom.bind(this),
+
+            // Selection capabilities
+            getSelection: this.getSelection.bind(this),
+            copySelection: this.copySelection.bind(this),
+            selectAll: this.selectAll.bind(this),
+            clearSelection: this.clearSelection.bind(this),
+
+            // IO capabilities
+            write: this.write.bind(this),
+            clear: this.clear.bind(this),
+            visualBell: this.visualBell.bind(this),
+
+            // Configuration capabilities
+            configure: this.configure.bind(this),
+            setZoom: this.setZoom.bind(this),
+
+            // State capabilities
+            saveState: this.saveState.bind(this),
+            restoreState: this.restoreState.bind(this),
+            supportsBracketedPaste: this.supportsBracketedPaste.bind(this),
+            isAlternateScreenActive: this.isAlternateScreenActive.bind(this),
+        }
     }
 }
 

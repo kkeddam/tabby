@@ -15,55 +15,36 @@ export interface SearchState {
 }
 
 /**
- * Interface for terminal search functionality
+ * Terminal capabilities interface (consolidated to reduce Fan-In)
  */
-export interface TerminalSearch {
+export interface TerminalCapabilities {
+    // Search capabilities
     findNext: (term: string, searchOptions?: SearchOptions) => SearchState
     findPrevious: (term: string, searchOptions?: SearchOptions) => SearchState
     cancelSearch: () => void
-}
 
-/**
- * Interface for terminal scrolling functionality
- */
-export interface TerminalScroll {
+    // Scroll capabilities
     scrollToTop: () => void
     scrollLines: (amount: number) => void
     scrollPages: (pages: number) => void
     scrollToBottom: () => void
-}
 
-/**
- * Interface for terminal selection functionality
- */
-export interface TerminalSelection {
+    // Selection capabilities
     getSelection: () => string
     copySelection: () => void
     selectAll: () => void
     clearSelection: () => void
-}
 
-/**
- * Interface for terminal input/output functionality
- */
-export interface TerminalIO {
+    // IO capabilities
     write: (data: string) => Promise<void>
     clear: () => void
     visualBell: () => void
-}
 
-/**
- * Interface for terminal configuration functionality
- */
-export interface TerminalConfiguration {
+    // Configuration capabilities
     configure: (profile: BaseTerminalProfile) => void
     setZoom: (zoom: number) => void
-}
 
-/**
- * Interface for terminal state functionality
- */
-export interface TerminalState {
+    // State capabilities
     saveState: () => any
     restoreState: (state: string) => void
     supportsBracketedPaste: () => boolean
@@ -71,16 +52,9 @@ export interface TerminalState {
 }
 
 /**
- * Extend to add support for a different VT frontend implementation
+ * Base class for terminal frontends
  */
-export abstract class Frontend implements
-    TerminalSearch,
-    TerminalScroll,
-    TerminalSelection,
-    TerminalIO,
-    TerminalConfiguration,
-    TerminalState {
-
+export abstract class Frontend {
     enableResizing = true
     protected ready = new AsyncSubject<void>()
     protected title = new ReplaySubject<string>(1)
@@ -129,31 +103,8 @@ export abstract class Frontend implements
 
     abstract attach (host: HTMLElement, profile: BaseTerminalProfile): Promise<void>
     detach (host: HTMLElement): void { } // eslint-disable-line
-
-    abstract getSelection (): string
-    abstract copySelection (): void
-    abstract selectAll (): void
-    abstract clearSelection (): void
     abstract focus (): void
-    abstract write (data: string): Promise<void>
-    abstract clear (): void
-    abstract visualBell (): void
 
-    abstract scrollToTop (): void
-    abstract scrollLines (amount: number): void
-    abstract scrollPages (pages: number): void
-    abstract scrollToBottom (): void
-
-    abstract configure (profile: BaseTerminalProfile): void
-    abstract setZoom (zoom: number): void
-
-    abstract findNext (term: string, searchOptions?: SearchOptions): SearchState
-    abstract findPrevious (term: string, searchOptions?: SearchOptions): SearchState
-    abstract cancelSearch (): void
-
-    abstract saveState (): any
-    abstract restoreState (state: string): void
-
-    abstract supportsBracketedPaste (): boolean
-    abstract isAlternateScreenActive (): boolean
+    // Terminal capability implementations
+    abstract getCapabilities (): TerminalCapabilities
 }
